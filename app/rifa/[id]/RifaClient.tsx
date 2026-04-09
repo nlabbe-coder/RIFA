@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import Navbar from '@/components/Navbar'
 import { formatBs, formatDate } from '@/lib/utils'
@@ -19,6 +19,29 @@ interface Rifa {
   tickets: { numero: number }[]
 }
 
+interface Countdown { dias: number; horas: number; minutos: number; segundos: number; pasado: boolean }
+
+function useCountdown(fecha: string): Countdown {
+  const calc = useCallback(() => {
+    const diff = new Date(fecha).getTime() - Date.now()
+    if (diff <= 0) return { dias: 0, horas: 0, minutos: 0, segundos: 0, pasado: true }
+    return {
+      dias: Math.floor(diff / 86400000),
+      horas: Math.floor((diff % 86400000) / 3600000),
+      minutos: Math.floor((diff % 3600000) / 60000),
+      segundos: Math.floor((diff % 60000) / 1000),
+      pasado: false,
+    }
+  }, [fecha])
+
+  const [cd, setCd] = useState<Countdown>(calc)
+  useEffect(() => {
+    const t = setInterval(() => setCd(calc()), 1000)
+    return () => clearInterval(t)
+  }, [calc])
+  return cd
+}
+
 const PAGE_SIZE = 200
 
 export default function RifaClient({ id }: { id: string }) {
@@ -29,16 +52,25 @@ export default function RifaClient({ id }: { id: string }) {
   const [seleccionados, setSeleccionados] = useState<number[]>([])
   const [pagina, setPagina] = useState(0)
   const [busqueda, setBusqueda] = useState('')
+  const [imgAbierta, setImgAbierta] = useState(false)
 
-  useEffect(() => {
+  const fetchRifa = useCallback((silencioso = false) => {
+    if (!silencioso) setLoading(true)
     fetch(`/api/rifas/${id}`)
-      .then(r => {
-        if (!r.ok) throw new Error('No encontrada')
-        return r.json()
-      })
+      .then(r => { if (!r.ok) throw new Error(); return r.json() })
       .then(data => { setRifa(data); setLoading(false) })
       .catch(() => { setError(true); setLoading(false) })
   }, [id])
+
+  useEffect(() => { fetchRifa() }, [fetchRifa])
+
+  // Actualizar progreso cada 30s en tiempo real
+  useEffect(() => {
+    const t = setInterval(() => fetchRifa(true), 30000)
+    return () => clearInterval(t)
+  }, [fetchRifa])
+
+  const cd = useCountdown(rifa?.fechaSorteo ?? new Date().toISOString())
 
   const vendidosSet = new Set(rifa?.tickets.map(t => t.numero) ?? [])
   const totalPaginas = rifa ? Math.ceil(rifa.totalNumeros / PAGE_SIZE) : 0
@@ -54,9 +86,7 @@ export default function RifaClient({ id }: { id: string }) {
 
   const toggleNumero = (n: number) => {
     if (vendidosSet.has(n)) return
-    setSeleccionados(prev =>
-      prev.includes(n) ? prev.filter(x => x !== n) : [...prev, n]
-    )
+    setSeleccionados(prev => prev.includes(n) ? prev.filter(x => x !== n) : [...prev, n])
   }
 
   const aleatorio = () => {
@@ -72,6 +102,7 @@ export default function RifaClient({ id }: { id: string }) {
 
   const total = seleccionados.length * (rifa?.precio ?? 0)
   const digits = rifa?.totalNumeros.toString().length ?? 1
+  const pct = rifa ? Math.round(rifa.numerosVendidos / rifa.totalNumeros * 100) : 0
 
   const irAlCheckout = () => {
     if (seleccionados.length === 0) { toast.error('Selecciona al menos un número'); return }
@@ -103,20 +134,40 @@ export default function RifaClient({ id }: { id: string }) {
     <>
       <Navbar />
       <div className="max-w-6xl mx-auto px-4 py-8">
+
         {/* Header rifa */}
         <div className="card mb-6 overflow-hidden">
           <div className="md:flex">
-            <div className="md:w-2/5 h-64 md:h-auto bg-gradient-to-br from-primary-600 to-primary-800 flex items-center justify-center">
+
+            {/* Imagen con visor */}
+            <div
+              className="md:w-2/5 h-72 md:h-auto bg-gradient-to-br from-primary-600 to-primary-800 flex items-center justify-center relative group cursor-pointer overflow-hidden"
+              onClick={() => rifa.imagen && setImgAbierta(true)}
+            >
               {rifa.imagen ? (
-                <img src={rifa.imagen} alt={rifa.titulo} className="w-full h-full object-cover"/>
+                <>
+                  <img src={rifa.imagen} alt={rifa.titulo} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"/>
+                  <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-all flex items-center justify-center">
+                    <span className="text-white text-sm font-bold opacity-0 group-hover:opacity-100 bg-black/50 px-4 py-2 rounded-xl transition-all">
+                      🔍 Ver imagen
+                    </span>
+                  </div>
+                </>
               ) : (
                 <div className="text-center text-white p-8">
                   <div className="text-7xl mb-3">🏆</div>
                   <p className="font-bold text-xl">{rifa.premio}</p>
                 </div>
               )}
+
+              {/* Badge premio sobre imagen */}
+              <div className="absolute bottom-3 left-3 bg-black/60 backdrop-blur-sm text-white text-xs font-bold px-3 py-1.5 rounded-xl">
+                🏆 {rifa.premio}
+              </div>
             </div>
-            <div className="md:w-3/5 p-6 md:p-8">
+
+            {/* Info */}
+            <div className="md:w-3/5 p-6 md:p-8 flex flex-col">
               <div className="flex items-start justify-between mb-3">
                 <span className="badge bg-verde-500 text-white">● Activa</span>
                 <span className="text-2xl font-black text-primary-600">
@@ -125,31 +176,60 @@ export default function RifaClient({ id }: { id: string }) {
               </div>
               <h1 className="text-2xl md:text-3xl font-black text-gray-900 mb-3">{rifa.titulo}</h1>
               <p className="text-gray-600 mb-5">{rifa.descripcion}</p>
-              <div className="grid grid-cols-2 gap-4 text-sm mb-5">
-                <div className="bg-gray-50 rounded-xl p-3">
-                  <p className="text-gray-400 text-xs">Premio</p>
-                  <p className="font-bold text-gray-800">🏆 {rifa.premio}</p>
+
+              {/* Progreso en tiempo real */}
+              <div className="mb-5">
+                <div className="flex justify-between text-sm mb-1.5">
+                  <span className="font-semibold text-gray-700">Boletos vendidos</span>
+                  <span className="font-black text-primary-600">{pct}%</span>
                 </div>
-                <div className="bg-gray-50 rounded-xl p-3">
-                  <p className="text-gray-400 text-xs">Fecha sorteo</p>
-                  <p className="font-bold text-gray-800">📅 {formatDate(rifa.fechaSorteo)}</p>
+                <div className="w-full bg-gray-100 rounded-full h-3 overflow-hidden">
+                  <div
+                    className="h-3 bg-gradient-to-r from-primary-500 to-primary-700 rounded-full transition-all duration-700"
+                    style={{ width: `${pct}%` }}
+                  />
                 </div>
+                <div className="flex justify-between text-xs text-gray-400 mt-1">
+                  <span>{rifa.numerosVendidos.toLocaleString()} vendidos</span>
+                  <span>{(rifa.totalNumeros - rifa.numerosVendidos).toLocaleString()} disponibles</span>
+                </div>
+              </div>
+
+              {/* Datos */}
+              <div className="grid grid-cols-2 gap-3 text-sm mb-5">
                 <div className="bg-gray-50 rounded-xl p-3">
-                  <p className="text-gray-400 text-xs">Total números</p>
+                  <p className="text-gray-400 text-xs mb-0.5">Total números</p>
                   <p className="font-bold text-gray-800">🎟️ {rifa.totalNumeros.toLocaleString()}</p>
                 </div>
                 <div className="bg-gray-50 rounded-xl p-3">
-                  <p className="text-gray-400 text-xs">Disponibles</p>
-                  <p className="font-bold text-verde-600">✓ {(rifa.totalNumeros - rifa.numerosVendidos).toLocaleString()}</p>
+                  <p className="text-gray-400 text-xs mb-0.5">Fecha sorteo</p>
+                  <p className="font-bold text-gray-800">📅 {formatDate(rifa.fechaSorteo)}</p>
                 </div>
               </div>
-              <div className="w-full bg-gray-100 rounded-full h-2 overflow-hidden mb-1">
-                <div
-                  className="h-2 bg-gradient-to-r from-primary-500 to-primary-700 rounded-full"
-                  style={{ width: `${Math.round(rifa.numerosVendidos / rifa.totalNumeros * 100)}%` }}
-                />
-              </div>
-              <p className="text-xs text-gray-400">{Math.round(rifa.numerosVendidos / rifa.totalNumeros * 100)}% vendido</p>
+
+              {/* Contador regresivo */}
+              {!cd.pasado ? (
+                <div className="bg-gradient-to-r from-gray-900 to-gray-800 rounded-2xl p-4 mt-auto">
+                  <p className="text-gray-400 text-xs uppercase tracking-widest mb-3 text-center">Sorteo en</p>
+                  <div className="grid grid-cols-4 gap-2 text-center">
+                    {[
+                      { v: cd.dias,    l: 'Días' },
+                      { v: cd.horas,   l: 'Horas' },
+                      { v: cd.minutos, l: 'Min' },
+                      { v: cd.segundos,l: 'Seg' },
+                    ].map(({ v, l }) => (
+                      <div key={l} className="bg-white/10 rounded-xl py-2">
+                        <p className="text-2xl font-black text-white">{String(v).padStart(2, '0')}</p>
+                        <p className="text-gray-400 text-xs">{l}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 mt-auto text-center">
+                  <p className="text-amber-700 font-bold">⏰ El sorteo ya se realizó</p>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -250,6 +330,22 @@ export default function RifaClient({ id }: { id: string }) {
           </div>
         </div>
       </div>
+
+      {/* Visor de imagen fullscreen */}
+      {imgAbierta && rifa.imagen && (
+        <div
+          className="fixed inset-0 bg-black/90 z-50 flex items-center justify-center p-4"
+          onClick={() => setImgAbierta(false)}
+        >
+          <button className="absolute top-4 right-4 w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white text-xl">✕</button>
+          <img
+            src={rifa.imagen}
+            alt={rifa.titulo}
+            className="max-w-full max-h-full object-contain rounded-2xl"
+            onClick={e => e.stopPropagation()}
+          />
+        </div>
+      )}
     </>
   )
 }
