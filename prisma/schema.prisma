@@ -1,0 +1,104 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Rifa {
+  id              String    @id @default(cuid())
+  titulo          String
+  descripcion     String
+  imagen          String?
+  precio          Float
+  totalNumeros    Int
+  numerosVendidos Int       @default(0)
+  fechaSorteo     DateTime
+  premio          String
+  estado          String    @default("activa") // activa, cerrada, sorteada
+  ganadorNumero   Int?
+  ganadorId       String?
+  creadoEn        DateTime  @default(now())
+  actualizadoEn   DateTime  @updatedAt
+
+  ordenes         Orden[]
+  tickets         Ticket[]
+
+  @@map("rifas")
+}
+
+model Ticket {
+  id        String  @id @default(cuid())
+  rifaId    String
+  numero    Int
+  ordenId   String?
+
+  rifa      Rifa    @relation(fields: [rifaId], references: [id])
+  orden     Orden?  @relation(fields: [ordenId], references: [id])
+
+  @@unique([rifaId, numero])
+  @@map("tickets")
+}
+
+model Comprador {
+  id        String   @id @default(cuid())
+  nombre    String
+  ci        String
+  telefono  String
+  email     String
+  creadoEn  DateTime @default(now())
+
+  ordenes   Orden[]
+
+  @@map("compradores")
+}
+
+model Orden {
+  id              String    @id @default(cuid())
+  rifaId          String
+  compradorId     String
+  numeros         String    // JSON array de números
+  total           Float
+  metodoPago      String    // transferencia, qr, tigo_money, tarjeta
+  estadoPago      String    @default("pendiente") // pendiente, confirmado, rechazado
+  comprobante     String?   // URL o referencia del comprobante
+  fotoCI          String?   // URL foto del carnet de identidad
+  notas           String?
+  creadoEn        DateTime  @default(now())
+  actualizadoEn   DateTime  @updatedAt
+
+  rifa            Rifa      @relation(fields: [rifaId], references: [id])
+  comprador       Comprador @relation(fields: [compradorId], references: [id])
+  tickets         Ticket[]
+
+  @@map("ordenes")
+}
+
+model Admin {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  password     String
+  nombre       String
+  creadoEn     DateTime @default(now())
+
+  @@map("admins")
+}
+
+model ConfigPago {
+  id              String @id @default(cuid())
+  tipoPago        String @unique // transferencia, tigo_money, qr
+  habilitado      Boolean @default(true)
+  // Transferencia
+  banco           String?
+  numeroCuenta    String?
+  titular         String?
+  // Tigo Money
+  numeroTigo      String?
+  nombreTigo      String?
+  // QR
+  qrImagen        String?
+
+  @@map("config_pagos")
+}
