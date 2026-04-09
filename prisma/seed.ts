@@ -47,6 +47,15 @@ async function main() {
     },
   })
 
+  await prisma.configPago.upsert({
+    where: { tipoPago: 'usdt' },
+    update: {},
+    create: {
+      tipoPago: 'usdt',
+      habilitado: false,
+    },
+  })
+
   // Rifa de ejemplo
   await prisma.rifa.create({
     data: {

@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState, useRef, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import Navbar from '@/components/Navbar'
 import { formatBs } from '@/lib/utils'
@@ -17,7 +17,15 @@ const METODOS = [
   { id: 'transferencia', label: 'Transferencia Bancaria', icon: '🏦', desc: 'Transfiere a nuestra cuenta bancaria' },
   { id: 'qr',           label: 'QR Interoperable',       icon: '📱', desc: 'Escanea el código QR con tu app bancaria' },
   { id: 'tigo_money',   label: 'Tigo Money',             icon: '📲', desc: 'Paga con tu billetera Tigo Money' },
+  { id: 'usdt',         label: 'USDT (Crypto)',           icon: '₮',  desc: 'TRC20, BEP20, Polygon, ERC20' },
   { id: 'tarjeta',      label: 'Tarjeta Crédito/Débito', icon: '💳', desc: 'Próximamente disponible' },
+]
+
+const REDES_USDT = [
+  { id: 'trc20',   label: 'TRON (TRC20)',            field: 'usdtTrc20',   color: '#ef4444', explorer: 'https://tronscan.org/#/address/' },
+  { id: 'bep20',   label: 'BNB Smart Chain (BEP20)', field: 'usdtBep20',   color: '#f59e0b', explorer: 'https://bscscan.com/address/' },
+  { id: 'polygon', label: 'Polygon (MATIC)',          field: 'usdtPolygon', color: '#8b5cf6', explorer: 'https://polygonscan.com/address/' },
+  { id: 'erc20',   label: 'Ethereum (ERC20)',         field: 'usdtErc20',   color: '#3b82f6', explorer: 'https://etherscan.io/address/' },
 ]
 
 export default function CheckoutPage() {
@@ -26,8 +34,15 @@ export default function CheckoutPage() {
   const [rifa, setRifa] = useState<Rifa | null>(null)
   const [configPagos, setConfigPagos] = useState<ConfigPago[]>([])
   const [metodo, setMetodo] = useState('')
+  const [redUsdt, setRedUsdt] = useState('')
   const [loading, setLoading] = useState(false)
+  const [precioUsdt, setPrecioUsdt] = useState<{ precio: number; minimo?: number; maximo?: number; actualizadoEn?: string } | null>(null)
+  const [cargandoPrecio, setCargandoPrecio] = useState(false)
   const [form, setForm] = useState({ nombre: '', ci: '', telefono: '', email: '', comprobante: '' })
+
+  // Cliente reconocido
+  const [clienteConocido, setClienteConocido] = useState(false)
+  const [buscandoCI, setBuscandoCI] = useState(false)
 
   // Foto CI
   const fileRef = useRef<HTMLInputElement>(null)
@@ -45,8 +60,62 @@ export default function CheckoutPage() {
     fetch('/api/config-pagos').then(r => r.json()).then(setConfigPagos)
   }, [])
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) =>
-    setForm(prev => ({ ...prev, [e.target.name]: e.target.value }))
+  // Buscar cliente cuando el CI tiene al menos 5 caracteres
+  const buscarCliente = useCallback(async (ci: string) => {
+    if (ci.length < 5) return
+    setBuscandoCI(true)
+    try {
+      const res = await fetch(`/api/compradores?ci=${encodeURIComponent(ci)}`)
+      const data = await res.json()
+      if (data) {
+        setForm(p => ({
+          ...p,
+          nombre: data.nombre,
+          telefono: data.telefono,
+          email: data.email,
+        }))
+        if (data.fotoCI) {
+          setFotoCI(data.fotoCI)
+          setFotoCIUrl(data.fotoCI)
+        }
+        setClienteConocido(true)
+        toast.success(`¡Bienvenido de nuevo, ${data.nombre}! Tus datos fueron recuperados.`)
+      } else {
+        setClienteConocido(false)
+      }
+    } finally {
+      setBuscandoCI(false)
+    }
+  }, [])
+
+  // Cargar precio USDT cuando el cliente elige ese método
+  const cargarPrecioUsdt = async () => {
+    if (precioUsdt) return // ya cargado
+    setCargandoPrecio(true)
+    try {
+      const res = await fetch('/api/precio-usdt')
+      const data = await res.json()
+      if (data.precio) setPrecioUsdt(data)
+    } finally {
+      setCargandoPrecio(false)
+    }
+  }
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const { name, value } = e.target
+    setForm(prev => ({ ...prev, [name]: value }))
+
+    // Si cambia el CI, resetear y buscar cliente
+    if (name === 'ci') {
+      setClienteConocido(false)
+      setFotoCI(null)
+      setFotoCIUrl('')
+      if (value.length >= 5) {
+        const timer = setTimeout(() => buscarCliente(value), 600)
+        return () => clearTimeout(timer)
+      }
+    }
+  }
 
   const subirFotoCI = async (file: File) => {
     setFotoCI(URL.createObjectURL(file))
@@ -99,6 +168,7 @@ export default function CheckoutPage() {
           comprador: form,
           comprobante: form.comprobante,
           fotoCI: fotoCIUrl,
+          redUsdt: metodo === 'usdt' ? redUsdt : undefined,
         }),
       })
       const result = await res.json()
@@ -134,90 +204,144 @@ export default function CheckoutPage() {
             {/* Datos personales */}
             <div className="card p-6">
               <h2 className="font-bold text-gray-900 text-lg mb-5">Tus datos</h2>
+
+              {/* CI primero — trigger de búsqueda */}
+              <div className="mb-4">
+                <label className="label">Carnet de identidad (CI) *</label>
+                <div className="relative">
+                  <input
+                    name="ci"
+                    value={form.ci}
+                    onChange={handleChange}
+                    className="input pr-10"
+                    placeholder="Ej: 1234567 LP"
+                    required
+                  />
+                  {buscandoCI && (
+                    <div className="absolute right-3 top-3.5">
+                      <div className="w-4 h-4 border-2 border-primary-500 border-t-transparent rounded-full animate-spin"/>
+                    </div>
+                  )}
+                </div>
+                {clienteConocido && (
+                  <p className="text-xs text-verde-600 mt-1.5 font-medium">
+                    ✓ Cliente registrado — datos cargados automáticamente
+                  </p>
+                )}
+              </div>
+
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="label">Nombre completo *</label>
-                  <input name="nombre" value={form.nombre} onChange={handleChange} className="input" placeholder="Ej: Juan Mamani" required/>
-                </div>
-                <div>
-                  <label className="label">Carnet de identidad (CI) *</label>
-                  <input name="ci" value={form.ci} onChange={handleChange} className="input" placeholder="Ej: 1234567 LP" required/>
+                  <input
+                    name="nombre"
+                    value={form.nombre}
+                    onChange={handleChange}
+                    className={`input ${clienteConocido ? 'bg-gray-50' : ''}`}
+                    placeholder="Ej: Juan Mamani"
+                    required
+                  />
                 </div>
                 <div>
                   <label className="label">Teléfono / WhatsApp *</label>
-                  <input name="telefono" value={form.telefono} onChange={handleChange} className="input" placeholder="Ej: 70000000" required/>
+                  <input
+                    name="telefono"
+                    value={form.telefono}
+                    onChange={handleChange}
+                    className={`input ${clienteConocido ? 'bg-gray-50' : ''}`}
+                    placeholder="Ej: 70000000"
+                    required
+                  />
                 </div>
-                <div>
+                <div className="sm:col-span-2">
                   <label className="label">Correo electrónico *</label>
-                  <input name="email" type="email" value={form.email} onChange={handleChange} className="input" placeholder="tu@correo.com" required/>
+                  <input
+                    name="email"
+                    type="email"
+                    value={form.email}
+                    onChange={handleChange}
+                    className={`input ${clienteConocido ? 'bg-gray-50' : ''}`}
+                    placeholder="tu@correo.com"
+                    required
+                  />
                 </div>
               </div>
             </div>
 
             {/* Foto CI */}
             <div className="card p-6">
-              <h2 className="font-bold text-gray-900 text-lg mb-1">Foto de tu Carnet de Identidad *</h2>
-              <p className="text-gray-400 text-sm mb-5">Necesitamos verificar tu identidad. Toma una foto de la parte frontal de tu CI.</p>
+              <div className="flex items-center justify-between mb-1">
+                <h2 className="font-bold text-gray-900 text-lg">Foto de tu Carnet de Identidad *</h2>
+                {clienteConocido && fotoCIUrl && (
+                  <span className="badge bg-verde-500 text-white text-xs">✓ Ya registrada</span>
+                )}
+              </div>
 
-              {!fotoCI ? (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {/* Subir archivo */}
+              {clienteConocido && fotoCIUrl ? (
+                // Cliente conocido: mostrar foto existente
+                <div>
+                  <p className="text-gray-400 text-sm mb-3">Ya tenemos tu foto en el sistema. No necesitas subirla de nuevo.</p>
+                  <div className="relative inline-block">
+                    <img src={fotoCI!} alt="CI registrado" className="h-32 rounded-xl border-2 border-verde-300 object-contain bg-gray-50"/>
+                    <div className="absolute top-2 right-2 bg-verde-500 text-white text-xs font-bold px-2 py-0.5 rounded-full">✓</div>
+                  </div>
                   <button
                     type="button"
-                    onClick={() => fileRef.current?.click()}
-                    className="flex flex-col items-center justify-center gap-3 border-2 border-dashed border-gray-200 hover:border-primary-400 hover:bg-primary-50 rounded-xl p-6 transition-all"
+                    onClick={() => { setFotoCI(null); setFotoCIUrl(''); setClienteConocido(false) }}
+                    className="block text-xs text-gray-400 hover:text-primary-600 mt-2 underline"
                   >
-                    <span className="text-4xl">📁</span>
-                    <div className="text-center">
-                      <p className="font-semibold text-gray-700 text-sm">Subir desde galería</p>
-                      <p className="text-gray-400 text-xs mt-0.5">JPG, PNG o WebP</p>
-                    </div>
-                  </button>
-
-                  {/* Tomar foto con cámara */}
-                  <button
-                    type="button"
-                    onClick={() => camaraRef.current?.click()}
-                    className="flex flex-col items-center justify-center gap-3 border-2 border-dashed border-gray-200 hover:border-primary-400 hover:bg-primary-50 rounded-xl p-6 transition-all"
-                  >
-                    <span className="text-4xl">📷</span>
-                    <div className="text-center">
-                      <p className="font-semibold text-gray-700 text-sm">Tomar foto con cámara</p>
-                      <p className="text-gray-400 text-xs mt-0.5">Usa la cámara de tu teléfono</p>
-                    </div>
+                    Actualizar foto
                   </button>
                 </div>
               ) : (
-                <div className="relative">
-                  <img src={fotoCI} alt="Foto CI" className="w-full max-h-56 object-contain rounded-xl border-2 border-primary-200 bg-gray-50"/>
-                  {uploadingCI && (
-                    <div className="absolute inset-0 flex flex-col items-center justify-center bg-white/80 rounded-xl gap-2">
-                      <div className="animate-spin w-8 h-8 border-4 border-primary-600 border-t-transparent rounded-full"/>
-                      <p className="text-sm text-gray-600 font-medium">Subiendo foto...</p>
-                    </div>
-                  )}
-                  {!uploadingCI && (
-                    <div className="absolute top-2 right-2 flex gap-2">
-                      <span className="bg-verde-500 text-white text-xs font-bold px-2.5 py-1 rounded-full">✓ Verificada</span>
-                      <button
-                        type="button"
-                        onClick={() => { setFotoCI(null); setFotoCIUrl('') }}
-                        className="bg-white text-gray-500 hover:text-red-500 text-xs font-bold px-2.5 py-1 rounded-full border border-gray-200 shadow-sm"
-                      >
-                        Cambiar
+                // Cliente nuevo: pedir foto
+                <div>
+                  <p className="text-gray-400 text-sm mb-4">Necesitamos verificar tu identidad. Toma una foto de la parte frontal de tu CI.</p>
+                  {!fotoCI ? (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <button type="button" onClick={() => fileRef.current?.click()}
+                        className="flex flex-col items-center justify-center gap-3 border-2 border-dashed border-gray-200 hover:border-primary-400 hover:bg-primary-50 rounded-xl p-6 transition-all">
+                        <span className="text-4xl">📁</span>
+                        <div className="text-center">
+                          <p className="font-semibold text-gray-700 text-sm">Subir desde galería</p>
+                          <p className="text-gray-400 text-xs mt-0.5">JPG, PNG o WebP</p>
+                        </div>
                       </button>
+                      <button type="button" onClick={() => camaraRef.current?.click()}
+                        className="flex flex-col items-center justify-center gap-3 border-2 border-dashed border-gray-200 hover:border-primary-400 hover:bg-primary-50 rounded-xl p-6 transition-all">
+                        <span className="text-4xl">📷</span>
+                        <div className="text-center">
+                          <p className="font-semibold text-gray-700 text-sm">Tomar foto con cámara</p>
+                          <p className="text-gray-400 text-xs mt-0.5">Usa la cámara de tu teléfono</p>
+                        </div>
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="relative">
+                      <img src={fotoCI} alt="Foto CI" className="w-full max-h-56 object-contain rounded-xl border-2 border-primary-200 bg-gray-50"/>
+                      {uploadingCI && (
+                        <div className="absolute inset-0 flex flex-col items-center justify-center bg-white/80 rounded-xl gap-2">
+                          <div className="animate-spin w-8 h-8 border-4 border-primary-600 border-t-transparent rounded-full"/>
+                          <p className="text-sm text-gray-600 font-medium">Subiendo foto...</p>
+                        </div>
+                      )}
+                      {!uploadingCI && (
+                        <div className="absolute top-2 right-2 flex gap-2">
+                          <span className="bg-verde-500 text-white text-xs font-bold px-2.5 py-1 rounded-full">✓ Verificada</span>
+                          <button type="button" onClick={() => { setFotoCI(null); setFotoCIUrl('') }}
+                            className="bg-white text-gray-500 hover:text-red-500 text-xs font-bold px-2.5 py-1 rounded-full border border-gray-200 shadow-sm">
+                            Cambiar
+                          </button>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
               )}
 
-              {/* Inputs ocultos */}
               <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleFotoCI}/>
               <input ref={camaraRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handleFotoCI}/>
-
-              <p className="text-xs text-gray-400 mt-3 flex items-center gap-1.5">
-                🔒 Tu foto es privada y solo la verá el administrador para verificar tu identidad.
-              </p>
+              <p className="text-xs text-gray-400 mt-3">🔒 Tu foto es privada y solo la verá el administrador.</p>
             </div>
 
             {/* Método de pago */}
@@ -228,19 +352,13 @@ export default function CheckoutPage() {
                   const config = configPagos.find(c => c.tipoPago === m.id)
                   const disabled = m.id === 'tarjeta' || (config && !config.habilitado)
                   return (
-                    <button
-                      key={m.id}
-                      type="button"
-                      disabled={!!disabled}
-                      onClick={() => !disabled && setMetodo(m.id)}
+                    <button key={m.id} type="button" disabled={!!disabled}
+                      onClick={() => { if (!disabled) { setMetodo(m.id); if (m.id === 'usdt') cargarPrecioUsdt() } }}
                       className={`text-left p-4 rounded-xl border-2 transition-all ${
-                        metodo === m.id
-                          ? 'border-primary-600 bg-primary-50'
-                          : disabled
-                          ? 'border-gray-100 bg-gray-50 opacity-50 cursor-not-allowed'
-                          : 'border-gray-200 hover:border-primary-300 hover:bg-gray-50'
-                      }`}
-                    >
+                        metodo === m.id ? 'border-primary-600 bg-primary-50'
+                        : disabled ? 'border-gray-100 bg-gray-50 opacity-50 cursor-not-allowed'
+                        : 'border-gray-200 hover:border-primary-300 hover:bg-gray-50'
+                      }`}>
                       <div className="flex items-center gap-3">
                         <span className="text-2xl">{m.icon}</span>
                         <div>
@@ -260,7 +378,6 @@ export default function CheckoutPage() {
                 })}
               </div>
 
-              {/* Instrucciones del método */}
               {metodo && configMetodo && (
                 <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-4">
                   <p className="font-semibold text-blue-800 mb-2">
@@ -289,14 +406,119 @@ export default function CheckoutPage() {
                       }
                     </div>
                   )}
+                  {metodo === 'usdt' && (
+                    <div className="text-sm text-blue-700">
+
+                      {/* Precio estimado en USDT */}
+                      <div className="bg-gray-900 text-white rounded-xl p-4 mb-4">
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-gray-400 text-xs font-medium uppercase tracking-wider">Precio Binance P2P · USDT/BOB</span>
+                          <button
+                            type="button"
+                            onClick={() => { setPrecioUsdt(null); cargarPrecioUsdt() }}
+                            className="text-gray-400 hover:text-white text-xs"
+                          >↻ Actualizar</button>
+                        </div>
+
+                        {cargandoPrecio ? (
+                          <div className="flex items-center gap-2 py-2">
+                            <div className="w-4 h-4 border-2 border-gray-500 border-t-white rounded-full animate-spin"/>
+                            <span className="text-gray-400 text-sm">Consultando Binance P2P...</span>
+                          </div>
+                        ) : precioUsdt ? (
+                          <>
+                            <div className="flex items-end gap-3 mb-3">
+                              <div>
+                                <p className="text-xs text-gray-400 mb-0.5">Tasa actual</p>
+                                <p className="text-2xl font-black text-white">
+                                  1 USDT = <span className="text-amber-400">Bs. {precioUsdt.precio.toFixed(2)}</span>
+                                </p>
+                              </div>
+                            </div>
+
+                            {/* Estimado a pagar */}
+                            <div className="bg-white/10 rounded-xl p-3">
+                              <p className="text-xs text-gray-300 mb-1">Debes enviar aproximadamente:</p>
+                              <p className="text-3xl font-black text-amber-400">
+                                {(total / precioUsdt.precio).toFixed(2)} <span className="text-lg">USDT</span>
+                              </p>
+                              {precioUsdt.minimo && precioUsdt.maximo && (
+                                <p className="text-xs text-gray-400 mt-1">
+                                  Rango: {(total / precioUsdt.maximo).toFixed(2)} – {(total / precioUsdt.minimo).toFixed(2)} USDT
+                                  <span className="ml-1">(según el vendedor)</span>
+                                </p>
+                              )}
+                              <p className="text-xs text-gray-300 mt-2">
+                                Total en bolivianos: <strong className="text-white">Bs. {total.toFixed(2)}</strong>
+                              </p>
+                            </div>
+
+                            <p className="text-xs text-gray-500 mt-2">
+                              ⚠️ El monto puede variar. Usa la tasa del vendedor al momento de pagar.
+                              {precioUsdt.actualizadoEn && ` · Actualizado: ${new Date(precioUsdt.actualizadoEn).toLocaleTimeString('es-BO')}`}
+                            </p>
+                          </>
+                        ) : (
+                          <p className="text-gray-400 text-sm py-1">No se pudo obtener el precio. Consulta en Binance P2P.</p>
+                        )}
+                      </div>
+
+                      <p className="font-semibold mb-2">Selecciona la red:</p>
+                      <div className="grid grid-cols-2 gap-2 mb-3">
+                        {REDES_USDT.map(red => {
+                          const wallet = (configMetodo as any)[red.field]
+                          if (!wallet) return null
+                          return (
+                            <button key={red.id} type="button"
+                              onClick={() => setRedUsdt(red.id)}
+                              className={`text-left p-2.5 rounded-xl border-2 transition-all ${
+                                redUsdt === red.id ? 'border-blue-500 bg-blue-50' : 'border-blue-200 hover:border-blue-400'
+                              }`}>
+                              <span className="font-bold text-xs" style={{ color: red.color }}>● {red.label}</span>
+                            </button>
+                          )
+                        })}
+                      </div>
+                      {redUsdt && (() => {
+                        const red = REDES_USDT.find(r => r.id === redUsdt)!
+                        const wallet = (configMetodo as any)[red.field]
+                        return (
+                          <div className="bg-white border border-blue-200 rounded-xl p-3">
+                            <p className="text-xs text-gray-500 mb-1">Dirección de wallet ({red.label}):</p>
+                            <p className="font-mono text-xs break-all text-gray-800 bg-gray-50 p-2 rounded-lg select-all">{wallet}</p>
+                            <button type="button"
+                              onClick={() => { navigator.clipboard.writeText(wallet); toast.success('Dirección copiada') }}
+                              className="mt-2 text-xs text-blue-600 hover:underline font-medium">
+                              📋 Copiar dirección
+                            </button>
+                            <p className="text-xs text-amber-600 mt-2 font-medium">⚠️ Solo envía USDT en red {red.label}. Otras redes pueden resultar en pérdida de fondos.</p>
+                          </div>
+                        )
+                      })()}
+                    </div>
+                  )}
                 </div>
               )}
 
               {metodo && metodo !== 'tarjeta' && (
                 <div>
-                  <label className="label">Número/referencia del comprobante (opcional)</label>
-                  <input name="comprobante" value={form.comprobante} onChange={handleChange} className="input" placeholder="Ej: REF-12345"/>
-                  <p className="text-xs text-gray-400 mt-1">También puedes enviarlo por WhatsApp. Tu pedido queda pendiente hasta confirmar el pago.</p>
+                  <label className="label">
+                    {metodo === 'usdt' ? 'Hash de la transacción (TX Hash) *' : 'Número/referencia del comprobante (opcional)'}
+                  </label>
+                  <input
+                    name="comprobante"
+                    value={form.comprobante}
+                    onChange={handleChange}
+                    className="input font-mono text-sm"
+                    placeholder={metodo === 'usdt' ? '0x... o hash de la transacción' : 'Ej: REF-12345'}
+                    required={metodo === 'usdt'}
+                  />
+                  <p className="text-xs text-gray-400 mt-1">
+                    {metodo === 'usdt'
+                      ? 'Copia el TX Hash de tu billetera después de enviar. Lo usaremos para verificar en el explorador de blockchain.'
+                      : 'También puedes enviarlo por WhatsApp.'
+                    }
+                  </p>
                 </div>
               )}
             </div>
@@ -323,6 +545,12 @@ export default function CheckoutPage() {
                   <span>Total</span>
                   <span className="text-primary-600">{formatBs(total)}</span>
                 </div>
+                {metodo === 'usdt' && precioUsdt && (
+                  <div className="flex justify-between text-sm mt-1">
+                    <span className="text-gray-400">≈ en USDT</span>
+                    <span className="font-bold text-amber-600">~ {(total / precioUsdt.precio).toFixed(2)} USDT</span>
+                  </div>
+                )}
               </div>
 
               {/* Checklist */}

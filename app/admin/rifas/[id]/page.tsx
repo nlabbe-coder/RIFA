@@ -3,6 +3,7 @@ import { formatBs, formatDate, formatDateTime } from '@/lib/utils'
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import RifaEstadoSelector from '@/components/RifaEstadoSelector'
+import SorteoBtn from '@/components/SorteoBtn'
 
 export default async function AdminRifaDetalle({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
@@ -37,6 +38,9 @@ export default async function AdminRifaDetalle({ params }: { params: Promise<{ i
             ✏️ Editar
           </Link>
           <RifaEstadoSelector rifaId={rifa.id} estadoActual={rifa.estado} />
+          {rifa.estado !== 'sorteada' && (
+            <SorteoBtn rifaId={rifa.id} rifaTitulo={rifa.titulo} />
+          )}
         </div>
       </div>
 

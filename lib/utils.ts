@@ -36,6 +36,7 @@ export function metodoPagoLabel(metodo: string) {
     transferencia: 'Transferencia Bancaria',
     qr:            'QR Interoperable',
     tigo_money:    'Tigo Money',
+    usdt:          'USDT (Crypto)',
     tarjeta:       'Tarjeta de Crédito/Débito',
   }
   return map[metodo] ?? metodo

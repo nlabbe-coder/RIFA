@@ -1,4 +1,6 @@
 import { NextResponse } from 'next/server'
+import { writeFile, mkdir } from 'fs/promises'
+import path from 'path'
 
 export async function POST(req: Request) {
   const formData = await req.formData()
@@ -12,25 +14,13 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Solo se permiten imágenes JPG, PNG o WebP' }, { status: 400 })
   }
 
-  const cloudName = process.env.CLOUDINARY_CLOUD_NAME
-  const uploadPreset = process.env.CLOUDINARY_UPLOAD_PRESET
+  const bytes = await file.arrayBuffer()
+  const buffer = Buffer.from(bytes)
+  const filename = `rifa_${Date.now()}.${ext}`
+  const uploadDir = path.join(process.cwd(), 'public', 'uploads')
 
-  if (!cloudName || !uploadPreset) {
-    return NextResponse.json({ error: 'Cloudinary no configurado' }, { status: 500 })
-  }
+  await mkdir(uploadDir, { recursive: true })
+  await writeFile(path.join(uploadDir, filename), buffer)
 
-  const cloud = new FormData()
-  cloud.append('file', file)
-  cloud.append('upload_preset', uploadPreset)
-  cloud.append('folder', 'rifabolivia')
-
-  const res = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/image/upload`, {
-    method: 'POST',
-    body: cloud,
-  })
-
-  const data = await res.json()
-  if (!res.ok) return NextResponse.json({ error: 'Error al subir imagen' }, { status: 500 })
-
-  return NextResponse.json({ url: data.secure_url })
+  return NextResponse.json({ url: `/uploads/${filename}` })
 }

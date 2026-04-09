@@ -84,12 +84,11 @@ export default function AdminSidebar({ nombre }: { nombre: string }) {
         <div className="md:hidden fixed inset-0 bg-black/40 z-40" onClick={() => setMobileOpen(false)}/>
       )}
 
-      {/* Sidebar */}
-      <aside className={`
-        fixed top-0 left-0 h-full w-64 bg-white border-r border-gray-100 shadow-sm z-40
-        transition-transform duration-300
-        ${mobileOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
-      `}>
+      {/* Sidebar - siempre visible en desktop, toggle en mobile */}
+      <aside
+        style={{ transform: mobileOpen ? 'translateX(0)' : '' }}
+        className="fixed top-0 left-0 h-full w-64 bg-white border-r border-gray-100 shadow-sm z-40 -translate-x-full md:translate-x-0 transition-transform duration-300"
+      >
         <SidebarContent />
       </aside>
     </>

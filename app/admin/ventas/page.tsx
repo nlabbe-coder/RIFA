@@ -1,8 +1,14 @@
 import { prisma } from '@/lib/db'
 import { formatBs, formatDateTime, metodoPagoLabel } from '@/lib/utils'
 import ConfirmarPagoBtn from '@/components/ConfirmarPagoBtn'
+import VerificarUsdtBtn from '@/components/VerificarUsdtBtn'
 
 export default async function AdminVentas() {
+  // Auto-verificar pagos USDT cada vez que se carga la página
+  try {
+    await fetch(`${process.env.NEXT_PUBLIC_URL ?? 'http://localhost:3000'}/api/cron/verificar-usdt`)
+  } catch {}
+
   const ordenes = await prisma.orden.findMany({
     include: {
       comprador: true,
@@ -17,9 +23,12 @@ export default async function AdminVentas() {
 
   return (
     <div>
-      <div className="mb-8">
-        <h1 className="text-2xl font-black text-gray-900">Ventas & Pagos</h1>
-        <p className="text-gray-400 text-sm">{ordenes.length} órdenes en total</p>
+      <div className="flex items-center justify-between mb-8">
+        <div>
+          <h1 className="text-2xl font-black text-gray-900">Ventas & Pagos</h1>
+          <p className="text-gray-400 text-sm">{ordenes.length} órdenes en total</p>
+        </div>
+        <VerificarUsdtBtn />
       </div>
 
       {/* Stats */}
@@ -62,9 +71,33 @@ export default async function AdminVentas() {
                         <strong>Pago:</strong> {metodoPagoLabel(o.metodoPago)} ·
                         <strong> Monto:</strong> {formatBs(o.total)}
                       </p>
-                      {o.comprobante && (
+                      {o.comprobante && o.metodoPago !== 'usdt' && (
                         <p className="text-sm text-gray-600"><strong>Comprobante:</strong> {o.comprobante}</p>
                       )}
+                      {o.comprobante && o.metodoPago === 'usdt' && (() => {
+                        const red = o.notas?.match(/USDT_RED:(\w+)/)?.[1] ?? ''
+                        const explorers: Record<string, string> = {
+                          trc20:   `https://tronscan.org/#/transaction/${o.comprobante}`,
+                          bep20:   `https://bscscan.com/tx/${o.comprobante}`,
+                          polygon: `https://polygonscan.com/tx/${o.comprobante}`,
+                          erc20:   `https://etherscan.io/tx/${o.comprobante}`,
+                        }
+                        const explorerUrl = explorers[red]
+                        return (
+                          <div className="mt-1">
+                            <p className="text-xs text-gray-500">
+                              <span className="font-medium">TX Hash ({red?.toUpperCase()}):</span>{' '}
+                              <span className="font-mono">{o.comprobante.slice(0, 20)}...</span>
+                            </p>
+                            {explorerUrl && (
+                              <a href={explorerUrl} target="_blank" rel="noopener noreferrer"
+                                className="text-xs text-blue-600 hover:underline font-medium">
+                                🔍 Ver en blockchain explorer →
+                              </a>
+                            )}
+                          </div>
+                        )
+                      })()}
                       {(o as any).fotoCI && (
                         <div className="mt-2">
                           <p className="text-xs text-gray-500 mb-1 font-medium">📋 Foto del CI:</p>

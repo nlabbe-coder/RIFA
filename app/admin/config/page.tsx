@@ -11,6 +11,10 @@ interface Config {
   numeroTigo?: string
   nombreTigo?: string
   qrImagen?: string
+  usdtTrc20?: string
+  usdtBep20?: string
+  usdtPolygon?: string
+  usdtErc20?: string
 }
 
 export default function AdminConfig() {
@@ -160,10 +164,58 @@ export default function AdminConfig() {
           )
         })()}
 
+        {/* USDT */}
+        {(() => {
+          const c = getConfig('usdt')
+          return (
+            <div className="card p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="font-bold text-gray-900 flex items-center gap-2">
+                  <span className="text-xl">₮</span> USDT (Tether)
+                </h2>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <span className="text-sm text-gray-500">Habilitado</span>
+                  <div
+                    onClick={() => updateConfig('usdt', 'habilitado', !c.habilitado)}
+                    className={`w-10 h-6 rounded-full transition-colors cursor-pointer ${c.habilitado ? 'bg-verde-500' : 'bg-gray-300'}`}
+                  >
+                    <div className={`w-4 h-4 bg-white rounded-full m-1 transition-transform ${c.habilitado ? 'translate-x-4' : ''}`}/>
+                  </div>
+                </label>
+              </div>
+              <p className="text-xs text-gray-400 mb-4">Agrega las wallets donde recibirás USDT. Puedes dejar vacías las redes que no uses.</p>
+              <div className="space-y-3">
+                {[
+                  { field: 'usdtTrc20',   label: 'TRON (TRC20)',           placeholder: 'T...', color: 'text-red-500' },
+                  { field: 'usdtBep20',   label: 'BNB Smart Chain (BEP20)', placeholder: '0x...', color: 'text-yellow-600' },
+                  { field: 'usdtPolygon', label: 'Polygon (MATIC)',          placeholder: '0x...', color: 'text-purple-600' },
+                  { field: 'usdtErc20',   label: 'Ethereum (ERC20)',         placeholder: '0x...', color: 'text-blue-600' },
+                ].map(net => (
+                  <div key={net.field}>
+                    <label className="label flex items-center gap-1.5">
+                      <span className={`text-xs font-bold ${net.color}`}>●</span>
+                      {net.label}
+                    </label>
+                    <input
+                      className="input font-mono text-sm"
+                      value={(c as any)[net.field] ?? ''}
+                      onChange={e => updateConfig('usdt', net.field, e.target.value)}
+                      placeholder={net.placeholder}
+                    />
+                  </div>
+                ))}
+              </div>
+              <button onClick={() => saveConfig('usdt')} disabled={saving === 'usdt'} className="btn-primary mt-4 text-sm py-2">
+                {saving === 'usdt' ? 'Guardando...' : 'Guardar'}
+              </button>
+            </div>
+          )
+        })()}
+
         {/* Tarjeta - placeholder */}
         <div className="card p-6 opacity-60">
           <h2 className="font-bold text-gray-900 flex items-center gap-2 mb-2">💳 Tarjeta Crédito/Débito</h2>
-          <p className="text-sm text-gray-500">Para habilitar pagos con tarjeta necesitas una cuenta en un gateway de pago boliviano (Pagos Net, Kushki, o similar). Contacta con tu proveedor para obtener las credenciales de API y las agregaremos aquí.</p>
+          <p className="text-sm text-gray-500">Para habilitar pagos con tarjeta necesitas una cuenta en un gateway de pago boliviano (Pagos Net, Kushki, o similar).</p>
         </div>
       </div>
     </div>

@@ -3,7 +3,7 @@ import { prisma } from '@/lib/db'
 
 export async function POST(req: Request) {
   const body = await req.json()
-  const { rifaId, numeros, metodoPago, comprador, comprobante, fotoCI } = body
+  const { rifaId, numeros, metodoPago, comprador, comprobante, fotoCI, redUsdt } = body
 
   if (!rifaId || !numeros?.length || !metodoPago || !comprador) {
     return NextResponse.json({ error: 'Datos incompletos' }, { status: 400 })
@@ -12,6 +12,20 @@ export async function POST(req: Request) {
   const rifa = await prisma.rifa.findUnique({ where: { id: rifaId } })
   if (!rifa || rifa.estado !== 'activa') {
     return NextResponse.json({ error: 'Rifa no disponible' }, { status: 400 })
+  }
+
+  // Verificar que el hash USDT no haya sido usado en otra orden
+  if (metodoPago === 'usdt' && comprobante) {
+    const hashExistente = await prisma.orden.findFirst({
+      where: { comprobante: comprobante.trim(), estadoPago: { not: 'rechazado' } },
+      select: { id: true },
+    })
+    if (hashExistente) {
+      return NextResponse.json(
+        { error: 'Este hash de transacción ya fue registrado en otra orden. Cada pago debe tener su propio hash.' },
+        { status: 409 }
+      )
+    }
   }
 
   // Verificar que los números estén disponibles
@@ -52,6 +66,7 @@ export async function POST(req: Request) {
         estadoPago: 'pendiente',
         comprobante: comprobante || null,
         fotoCI: fotoCI || null,
+        notas: metodoPago === 'usdt' && redUsdt ? `USDT_RED:${redUsdt}` : null,
       },
     })
 

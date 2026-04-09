@@ -1,12 +1,13 @@
 import { prisma } from '@/lib/db'
 import { formatDateTime } from '@/lib/utils'
+import FotoCIVisor from '@/components/FotoCIVisor'
 
 export default async function AdminCompradores() {
   const compradores = await prisma.comprador.findMany({
     include: {
       ordenes: {
-        where: { estadoPago: 'confirmado' },
-        select: { total: true, rifaId: true, numeros: true },
+        orderBy: { creadoEn: 'desc' },
+        select: { total: true, rifaId: true, numeros: true, estadoPago: true, fotoCI: true },
       },
     },
     orderBy: { creadoEn: 'desc' },
@@ -26,6 +27,7 @@ export default async function AdminCompradores() {
               <tr>
                 <th className="text-left px-5 py-3 text-gray-500 font-semibold">Nombre</th>
                 <th className="text-left px-5 py-3 text-gray-500 font-semibold">CI</th>
+                <th className="text-left px-5 py-3 text-gray-500 font-semibold">Foto CI</th>
                 <th className="text-left px-5 py-3 text-gray-500 font-semibold">Teléfono</th>
                 <th className="text-left px-5 py-3 text-gray-500 font-semibold">Email</th>
                 <th className="text-left px-5 py-3 text-gray-500 font-semibold">Compras</th>
@@ -35,17 +37,26 @@ export default async function AdminCompradores() {
             </thead>
             <tbody className="divide-y divide-gray-50">
               {compradores.map(c => {
-                const totalGastado = c.ordenes.reduce((s, o) => s + o.total, 0)
-                const totalNumeros = c.ordenes.reduce((s, o) => {
+                const ordenesConfirmadas = c.ordenes.filter(o => o.estadoPago === 'confirmado')
+                const totalGastado = ordenesConfirmadas.reduce((s, o) => s + o.total, 0)
+                const totalNumeros = ordenesConfirmadas.reduce((s, o) => {
                   const nums = JSON.parse(o.numeros)
                   return s + nums.length
                 }, 0)
+                // Tomar la primera fotoCI disponible entre todas sus órdenes
+                const fotoCI = c.ordenes.find(o => o.fotoCI)?.fotoCI ?? null
                 return (
                   <tr key={c.id} className="hover:bg-gray-50">
                     <td className="px-5 py-4">
                       <p className="font-semibold text-gray-900">{c.nombre}</p>
                     </td>
                     <td className="px-5 py-4 text-gray-600 font-mono text-xs">{c.ci}</td>
+                    <td className="px-5 py-4">
+                      {fotoCI
+                        ? <FotoCIVisor url={fotoCI} nombre={c.nombre} ci={c.ci} />
+                        : <span className="text-xs text-gray-300">—</span>
+                      }
+                    </td>
                     <td className="px-5 py-4">
                       <a href={`https://wa.me/591${c.telefono}`} target="_blank" rel="noopener noreferrer"
                         className="text-verde-600 hover:underline font-medium">
@@ -66,7 +77,7 @@ export default async function AdminCompradores() {
               })}
               {compradores.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="px-5 py-12 text-center text-gray-400">
+                  <td colSpan={8} className="px-5 py-12 text-center text-gray-400">
                     No hay compradores registrados aún
                   </td>
                 </tr>

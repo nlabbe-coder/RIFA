@@ -3,7 +3,7 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
+  provider = "sqlite"
   url      = env("DATABASE_URL")
 }
 
@@ -99,6 +99,11 @@ model ConfigPago {
   nombreTigo      String?
   // QR
   qrImagen        String?
+  // USDT
+  usdtTrc20       String?
+  usdtBep20       String?
+  usdtPolygon     String?
+  usdtErc20       String?
 
   @@map("config_pagos")
 }
