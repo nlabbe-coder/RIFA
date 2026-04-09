@@ -3,6 +3,8 @@ import Navbar from '@/components/Navbar'
 import RaffleCard from '@/components/RaffleCard'
 import Link from 'next/link'
 
+export const dynamic = 'force-dynamic'
+
 async function getRifas() {
   return prisma.rifa.findMany({
     orderBy: { creadoEn: 'desc' },
