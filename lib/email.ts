@@ -23,9 +23,10 @@ export async function enviarConfirmacionPago(data: EmailConfirmacion) {
     return
   }
 
+  const digits = String(Math.max(...data.numeros)).length
   const numerosHtml = data.numeros
     .sort((a, b) => a - b)
-    .map(n => `<span style="background:#fee2e2;color:#b91c1c;padding:4px 10px;border-radius:8px;font-weight:700;font-size:14px;margin:3px;display:inline-block;">${n}</span>`)
+    .map(n => `<span style="background:#eff6ff;color:#1d4ed8;border:1px solid #bfdbfe;padding:4px 10px;border-radius:8px;font-weight:700;font-size:13px;font-family:monospace;margin:3px;display:inline-block;">${String(n).padStart(digits, '0')}</span>`)
     .join('')
 
   const html = `
@@ -51,8 +52,8 @@ export async function enviarConfirmacionPago(data: EmailConfirmacion) {
           <td style="padding:36px 40px;">
             <p style="color:#374151;font-size:16px;margin:0 0 24px;">Hola <strong>${data.nombre}</strong>,</p>
             <p style="color:#374151;font-size:16px;margin:0 0 28px;">
-              Tu pago en <strong>USDT</strong> fue verificado exitosamente en la blockchain.
-              ¡Ya estás participando en la rifa!
+              Tu pago fue confirmado exitosamente. ¡Ya estás participando en la rifa!
+              Guarda este correo como comprobante oficial de tu participación.
             </p>
 
             <!-- Detalles orden -->
@@ -82,7 +83,7 @@ export async function enviarConfirmacionPago(data: EmailConfirmacion) {
             <div style="background:#fff1f2;border:2px solid #fecaca;border-radius:14px;padding:24px;margin-bottom:28px;">
               <h3 style="color:#b91c1c;margin:0 0 14px;font-size:15px;font-weight:700;">🎟️ Tus números de la suerte</h3>
               <div>${numerosHtml}</div>
-              <p style="color:#dc2626;font-size:12px;margin:14px 0 0;">Guarda este correo como comprobante de tu participación.</p>
+              <p style="color:#1d4ed8;font-size:12px;margin:14px 0 0;font-weight:600;">Total: ${data.numeros.length} número${data.numeros.length > 1 ? 's' : ''} · Guarda este correo como comprobante oficial.</p>
             </div>
 
             <!-- Suerte -->
