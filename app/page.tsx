@@ -4,6 +4,7 @@ import RaffleCard from '@/components/RaffleCard'
 import Link from 'next/link'
 
 export const dynamic = 'force-dynamic'
+export const revalidate = 0
 
 async function getRifas() {
   return prisma.rifa.findMany({
