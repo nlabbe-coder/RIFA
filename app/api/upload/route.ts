@@ -1,11 +1,4 @@
 import { NextResponse } from 'next/server'
-import { v2 as cloudinary } from 'cloudinary'
-
-cloudinary.config({
-  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-  api_key:    process.env.CLOUDINARY_API_KEY,
-  api_secret: process.env.CLOUDINARY_API_SECRET,
-})
 
 export async function POST(req: Request) {
   const formData = await req.formData()
@@ -19,23 +12,54 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Solo se permiten imágenes JPG, PNG o WebP' }, { status: 400 })
   }
 
-  try {
-    const bytes = await file.arrayBuffer()
-    const buffer = Buffer.from(bytes)
+  const cloudName = process.env.CLOUDINARY_CLOUD_NAME
+  const apiKey    = process.env.CLOUDINARY_API_KEY
+  const apiSecret = process.env.CLOUDINARY_API_SECRET
 
-    const result = await new Promise<{ secure_url: string }>((resolve, reject) => {
-      cloudinary.uploader.upload_stream(
-        { folder: 'rifabolivia', resource_type: 'image' },
-        (error, result) => {
-          if (error || !result) reject(error)
-          else resolve(result as { secure_url: string })
-        }
-      ).end(buffer)
+  if (!cloudName || !apiKey || !apiSecret) {
+    return NextResponse.json({ error: 'Cloudinary no configurado' }, { status: 500 })
+  }
+
+  try {
+    // Convertir a base64
+    const bytes = await file.arrayBuffer()
+    const base64 = Buffer.from(bytes).toString('base64')
+    const dataUri = `data:${file.type};base64,${base64}`
+
+    // Firma para autenticación
+    const timestamp = Math.floor(Date.now() / 1000)
+    const paramsToSign = `folder=rifabolivia&timestamp=${timestamp}`
+
+    // Generar firma HMAC-SHA1
+    const encoder = new TextEncoder()
+    const keyData = encoder.encode(apiSecret)
+    const msgData = encoder.encode(paramsToSign)
+    const cryptoKey = await crypto.subtle.importKey('raw', keyData, { name: 'HMAC', hash: 'SHA-1' }, false, ['sign'])
+    const sigBuffer = await crypto.subtle.sign('HMAC', cryptoKey, msgData)
+    const signature = Array.from(new Uint8Array(sigBuffer)).map(b => b.toString(16).padStart(2, '0')).join('')
+
+    // Subir a Cloudinary
+    const body = new FormData()
+    body.append('file', dataUri)
+    body.append('api_key', apiKey)
+    body.append('timestamp', timestamp.toString())
+    body.append('signature', signature)
+    body.append('folder', 'rifabolivia')
+
+    const res = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/image/upload`, {
+      method: 'POST',
+      body,
     })
 
-    return NextResponse.json({ url: result.secure_url })
+    const data = await res.json()
+    if (!res.ok) {
+      console.error('Cloudinary error:', data)
+      return NextResponse.json({ error: data.error?.message ?? 'Error al subir' }, { status: 500 })
+    }
+
+    return NextResponse.json({ url: data.secure_url })
   } catch (err) {
-    console.error('Error Cloudinary:', err)
+    console.error('Upload error:', err)
     return NextResponse.json({ error: 'Error al subir la imagen' }, { status: 500 })
   }
 }
