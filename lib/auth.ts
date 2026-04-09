@@ -1,18 +1,24 @@
 import { SignJWT, jwtVerify } from 'jose'
 import { cookies } from 'next/headers'
 
-const secret = new TextEncoder().encode(process.env.JWT_SECRET ?? 'fallback-secret')
+function getSecret() {
+  const s = process.env.JWT_SECRET
+  if (!s) throw new Error('JWT_SECRET no está configurado')
+  if (s.length < 32) throw new Error('JWT_SECRET debe tener al menos 32 caracteres')
+  return new TextEncoder().encode(s)
+}
 
 export async function createToken(payload: { id: string; email: string; nombre: string }) {
   return new SignJWT(payload)
     .setProtectedHeader({ alg: 'HS256' })
-    .setExpirationTime('7d')
-    .sign(secret)
+    .setIssuedAt()
+    .setExpirationTime('8h')
+    .sign(getSecret())
 }
 
 export async function verifyToken(token: string) {
   try {
-    const { payload } = await jwtVerify(token, secret)
+    const { payload } = await jwtVerify(token, getSecret())
     return payload as { id: string; email: string; nombre: string }
   } catch {
     return null
