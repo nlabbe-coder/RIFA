@@ -217,7 +217,104 @@ export default function AdminConfig() {
           <h2 className="font-bold text-gray-900 flex items-center gap-2 mb-2">💳 Tarjeta Crédito/Débito</h2>
           <p className="text-sm text-gray-500">Para habilitar pagos con tarjeta necesitas una cuenta en un gateway de pago boliviano (Pagos Net, Kushki, o similar).</p>
         </div>
+
+        {/* Cambiar contraseña */}
+        <CambiarPassword />
       </div>
+    </div>
+  )
+}
+
+function CambiarPassword() {
+  const [actual, setActual] = useState('')
+  const [nueva, setNueva] = useState('')
+  const [confirmar, setConfirmar] = useState('')
+  const [guardando, setGuardando] = useState(false)
+  const [mostrar, setMostrar] = useState(false)
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (nueva !== confirmar) { toast.error('Las contraseñas no coinciden'); return }
+    if (nueva.length < 8) { toast.error('Mínimo 8 caracteres'); return }
+
+    setGuardando(true)
+    try {
+      const res = await fetch('/api/admin/cambiar-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ passwordActual: actual, passwordNueva: nueva }),
+      })
+      const data = await res.json()
+      if (!res.ok) { toast.error(data.error); return }
+      toast.success('Contraseña actualizada correctamente')
+      setActual(''); setNueva(''); setConfirmar('')
+    } finally {
+      setGuardando(false)
+    }
+  }
+
+  return (
+    <div className="card p-6">
+      <h2 className="font-bold text-gray-900 flex items-center gap-2 mb-1">🔐 Cambiar contraseña</h2>
+      <p className="text-sm text-gray-400 mb-5">Cambia tu contraseña de acceso al panel</p>
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <div>
+          <label className="label">Contraseña actual</label>
+          <div className="relative">
+            <input
+              type={mostrar ? 'text' : 'password'}
+              className="input pr-10"
+              value={actual}
+              onChange={e => setActual(e.target.value)}
+              required
+              autoComplete="current-password"
+            />
+            <button type="button" onClick={() => setMostrar(m => !m)}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 text-sm">
+              {mostrar ? '🙈' : '👁️'}
+            </button>
+          </div>
+        </div>
+        <div>
+          <label className="label">Nueva contraseña <span className="text-gray-400 font-normal">(mínimo 8 caracteres)</span></label>
+          <input
+            type={mostrar ? 'text' : 'password'}
+            className="input"
+            value={nueva}
+            onChange={e => setNueva(e.target.value)}
+            required
+            autoComplete="new-password"
+          />
+          {nueva && (
+            <div className="mt-1.5 flex gap-1">
+              {[nueva.length >= 8, /[A-Z]/.test(nueva), /[0-9]/.test(nueva), /[^A-Za-z0-9]/.test(nueva)].map((ok, i) => (
+                <div key={i} className={`h-1 flex-1 rounded-full ${ok ? 'bg-verde-500' : 'bg-gray-200'}`}/>
+              ))}
+            </div>
+          )}
+        </div>
+        <div>
+          <label className="label">Confirmar nueva contraseña</label>
+          <input
+            type={mostrar ? 'text' : 'password'}
+            className="input"
+            value={confirmar}
+            onChange={e => setConfirmar(e.target.value)}
+            required
+            autoComplete="new-password"
+          />
+          {confirmar && nueva !== confirmar && (
+            <p className="text-xs text-red-500 mt-1">Las contraseñas no coinciden</p>
+          )}
+        </div>
+        <button
+          type="submit"
+          disabled={guardando || !actual || !nueva || !confirmar}
+          className="btn-primary text-sm py-2.5 disabled:opacity-50"
+        >
+          {guardando ? 'Guardando...' : 'Actualizar contraseña'}
+        </button>
+      </form>
     </div>
   )
 }
